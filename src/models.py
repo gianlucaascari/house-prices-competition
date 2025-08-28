@@ -12,16 +12,16 @@ MODELS = {
         "model": XGBRegressor(),
         "type": "tree",
     },
-    "ctb": {
-        "name": "CatBoost Regressor",
-        "model": CatBoostRegressor(verbose=False),
-        "type": "tree",
-    },
-    "lgb": {
-        "name": "LightGBM Regressor",
-        "model": LGBMRegressor(verbose=-1),
-        "type": "tree",
-    },
+    # "ctb": {
+    #     "name": "CatBoost Regressor",
+    #     "model": CatBoostRegressor(verbose=False),
+    #     "type": "tree",
+    # },
+    # "lgb": {
+    #     "name": "LightGBM Regressor",
+    #     "model": LGBMRegressor(verbose=-1),
+    #     "type": "tree",
+    # },
     "svr": {
         "name": "Support Vector Regressor",
         "model": SVR(),
