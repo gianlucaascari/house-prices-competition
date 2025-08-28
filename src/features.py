@@ -6,6 +6,8 @@ import plotly.express as px
 
 import shap
 
+from sklearn.model_selection import cross_val_score, KFold
+
 def get_shap_values_dataset(shap_values, X):
     mean_shap = np.abs(shap_values).mean(axis=0)
     importance_df = pd.DataFrame({
@@ -115,6 +117,12 @@ def get_feature_comparison(importance_df):
     
     return comparison_df
 
+def get_features_by_importance(comparison_df):
+    return list(comparison_df.sort_values('importance_sum', ascending=False)['feature'])
+
+def get_features_by_rank(comparison_df):
+    return list(comparison_df.sort_values('rank_overall')['feature'])
+
 def plot_importance_comparison(comparison_df, num_features=15):
     df = comparison_df.sort_values('importance_sum', ascending=False).head(num_features)
     
@@ -158,4 +166,24 @@ def plot_rank_comparison(comparison_df, num_features=15):
     )
     
     fig_rank.show()
+    
+def evaluate_feature_number_per_model(model, numbers, X, y, ranked_features, kf):
+    scores = {}
+    
+    for number in numbers:
+        features = ranked_features[:number]
+        scores[str(number)] = -cross_val_score(model(), X[features], y, cv=5, scoring='neg_mean_squared_error')
+
+    scores['all'] = -cross_val_score(model(), X, y, cv=kf, scoring='neg_mean_squared_error')
+    
+    return pd.DataFrame(scores)
+    
+def evaluate_feature_number_per_models(models, numbers, X, y, ranked_features):
+    scores = {}
+    kf = KFold(5, shuffle=True, random_state=42)
+    
+    for model in models:
+        print(f'Computing cross validation scores for {model}.')
+        scores[model] = evaluate_feature_number_per_model(models[model]['model'], numbers, X, y, ranked_features, kf)
             
+    return scores
