@@ -2,7 +2,10 @@ import os
 
 import pandas as pd
 import numpy as np
+
 import plotly.express as px
+import plotly.subplots as sp
+import plotly.graph_objects as go
 
 import shap
 
@@ -172,9 +175,9 @@ def evaluate_feature_number_per_model(model, numbers, X, y, ranked_features, kf)
     
     for number in numbers:
         features = ranked_features[:number]
-        scores[str(number)] = -cross_val_score(model(), X[features], y, cv=5, scoring='neg_mean_squared_error')
+        scores[str(number)] = np.sqrt(-cross_val_score(model(), X[features], y, cv=5, scoring='neg_mean_squared_error'))
 
-    scores['all'] = -cross_val_score(model(), X, y, cv=kf, scoring='neg_mean_squared_error')
+    scores['all'] = np.sqrt(-cross_val_score(model(), X, y, cv=kf, scoring='neg_mean_squared_error'))
     
     return pd.DataFrame(scores)
     
@@ -187,3 +190,53 @@ def evaluate_feature_number_per_models(models, numbers, X, y, ranked_features):
         scores[model] = evaluate_feature_number_per_model(models[model]['model'], numbers, X, y, ranked_features, kf)
             
     return scores
+
+
+def plot_model_scores(scores, feature_numbers, items_per_row=2):
+    # make the value_vars list once
+    value_vars = [str(n) for n in feature_numbers]
+
+    n_models = len(scores)
+    n_rows = (n_models + items_per_row - 1) // items_per_row
+
+    # create subplot grid
+    fig = sp.make_subplots(
+        rows=n_rows,
+        cols=items_per_row,
+        subplot_titles=list(scores.keys())
+    )
+
+    for i, (model_name, df) in enumerate(scores.items()):
+        # melt results for this model
+        df_res = df.reset_index().melt(
+            id_vars='index',
+            value_vars=value_vars,
+            var_name='number of features',
+            value_name='score'
+        )
+
+        # compute mean/std across folds
+        df_stats = df_res.groupby('number of features')['score'].agg(['mean', 'std']).reset_index()
+
+        # add bar trace to correct subplot
+        row = i // items_per_row + 1
+        col = i % items_per_row + 1
+
+        fig.add_trace(
+            go.Bar(
+                x=df_stats['number of features'],
+                y=df_stats['mean'],
+                error_y=dict(type='data', array=df_stats['std']),
+                name=model_name
+            ),
+            row=row, col=col
+        )
+
+    # improve layout
+    fig.update_layout(
+        height=400 * n_rows,
+        width=500 * items_per_row,
+        showlegend=False
+    )
+
+    fig.show()
