@@ -1,4 +1,5 @@
 import copy
+import json
 
 import pandas as pd
 import numpy as np
@@ -19,6 +20,10 @@ from sklearn.neighbors import KNeighborsRegressor
 
 from sklearn.model_selection import cross_val_score
 from sklearn.metrics import root_mean_squared_error
+
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.ensemble import StackingRegressor
 
 XGB = {
     "name": "XGBoost Regressor",
@@ -311,6 +316,31 @@ def evaluate_best_feature_number(model_entity, ranked_features, numbers, X_train
         
     return params, df_scores, val_scores, studies
 
+def save_models_values(params, cv_scores, val_scores):
+    with open('../checkpoints/model_optimization/params.json', 'w', encoding='utf-8') as f:
+        json.dump(params, f)
+    
+    cv_scores_serializable = {k: df.to_dict(orient="records") for k, df in cv_scores.items()}
+    with open('../checkpoints/model_optimization/cv_scores.json', 'w', encoding='utf-8') as f:
+        json.dump(cv_scores_serializable, f, indent=2)
+        
+    with open('../checkpoints/model_optimization/val_scores.json', 'w', encoding='utf-8') as f:
+        json.dump(val_scores, f)
+
+def load_models_values():
+    with open('../checkpoints/model_optimization/params.json', 'r', encoding='utf-8') as f:
+        params = json.load(f)
+    
+    with open('../checkpoints/model_optimization/cv_scores.json', 'r', encoding='utf-8') as f:
+        cv_scores_serializable = json.load(f)
+    cv_scores = {k: pd.DataFrame(v) for k, v in cv_scores_serializable.items()}
+    
+    with open('../checkpoints/model_optimization/val_scores.json', 'r', encoding='utf-8') as f:
+        val_scores = json.load(f)
+    
+    return params, cv_scores, val_scores
+
+
 def plot_model_scores(cv_scores, val_scores, feature_numbers, items_per_row=2):
     value_vars = [str(n) for n in feature_numbers]
 
@@ -376,6 +406,34 @@ def plot_model_scores(cv_scores, val_scores, feature_numbers, items_per_row=2):
         width=500 * items_per_row,
         showlegend=True
     )
+    
+    fig.update_yaxes(range=[0.23, 0.46])
 
     fig.show()
+    
+    
+def create_stack_regressor(model_selection, final_estimator, features_by_importance):
+    estimators = []
+    params, _, _ = load_models_values()
 
+    for key in model_selection:
+        n = model_selection[key]
+        feat_sel = ColumnTransformer(
+            [(f"sel_{str(n)}", "passthrough", features_by_importance[:n])]
+        )
+        
+        model = MODELS[key]['model']
+        base_params = MODELS[key]['base_params']
+        best_params = params[key][str(n)]
+        estimators.append((key, Pipeline(
+            [
+                ('select', feat_sel),
+                (key, model(**{**base_params, **best_params}))
+            ]
+        )))
+    
+    return StackingRegressor(
+        estimators,
+        final_estimator=final_estimator,
+        cv=5
+    )
