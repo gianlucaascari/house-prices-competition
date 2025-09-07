@@ -43,10 +43,10 @@ def compute_feature_importances(models, X, y):
 
     for key in models:
         if models[key]['type'] == 'tree':
-            importance_dfs[key] = get_feature_importance_tree_explainer(models[key]['model'], X, y)
+            importance_dfs[key] = get_feature_importance_tree_explainer(models[key]['model'](**models[key]['base_params']), X, y)
         else:
             
-            importance_dfs[key] = get_feature_importance_kernel_explainer(models[key]['model'], X, y)
+            importance_dfs[key] = get_feature_importance_kernel_explainer(models[key]['model'](**models[key]['base_params']), X, y)
             
         print(f"{key} analyzed.")
         
@@ -86,6 +86,7 @@ def get_feature_importances(models, X, y):
         if key in loaded_importance_dfs.keys():
             importance_dfs[key] = loaded_importance_dfs[key]
         elif key in computed_importance_dfs.keys():
+            print('a')
             importance_dfs[key] = computed_importance_dfs[key]
             
     return importance_dfs

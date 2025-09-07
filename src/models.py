@@ -18,7 +18,9 @@ from sklearn.svm import SVR
 from sklearn.neural_network import MLPRegressor
 from sklearn.neighbors import KNeighborsRegressor
 
-from sklearn.model_selection import cross_val_score
+from sklearn.linear_model import Lasso, Ridge, ElasticNet
+
+from sklearn.model_selection import cross_val_score, KFold
 from sklearn.metrics import root_mean_squared_error
 
 from sklearn.compose import ColumnTransformer
@@ -200,6 +202,57 @@ LGB = {
     }
 }
 
+LASSO = {
+    "name": "Lasso",
+    "model": Lasso,
+    "type": "other",
+    'params_search_space': {
+        'alpha': {
+            'low_limit': 1e-3,
+            'top_limit': 1e3,
+            'type': 'float',
+            'log': True,
+        },
+    },
+    'base_params': {}
+}
+
+RIDGE = {
+    "name": "Ridge",
+    "model": Ridge,
+    "type": "other",
+    'params_search_space': {
+        'alpha': {
+            'low_limit': 1e-3,
+            'top_limit': 1e3,
+            'type': 'float',
+            'log': True,
+        },
+    },
+    'base_params': {}
+}
+
+ELNET = {
+    "name": "Elastic Net",
+    "model": ElasticNet,
+    "type": "other",
+    'params_search_space': {
+        'alpha': {
+            'low_limit': 1e-3,
+            'top_limit': 1e3,
+            'type': 'float',
+            'log': True,
+        },
+        'l1_ratio': {
+            'low_limit': 0.0,
+            'top_limit': 1.0,
+            'type': 'float',
+            'log': False,
+        },
+    },
+    'base_params': {}
+}
+
 
 
 MODELS = {
@@ -209,6 +262,14 @@ MODELS = {
     "svr": SVR,
     "mlp": MLP,
     "knn": KNN,
+}
+
+META_MODELS = {
+    'lasso': LASSO,
+    'ridge': RIDGE,
+    'elNet': ELNET,
+    'svr': SVR,
+    # 'mlp': MLP,
 }
 
 def make_objective_function(model_entity, search_space, X, y, cv, scoring="neg_mean_squared_error"):
@@ -275,8 +336,9 @@ def build_model_params(model_entity, best_params):
 
     return params
 
-def optimize_and_evaluate_model(model_entity, X_train, y_train, X_val, y_val):
+def optimize_and_evaluate_model(model_entity, X_train, y_train, X_val, y_val, model_selection = {}, features_by_importance = []):
     objective = make_objective_function(model_entity, model_entity['params_search_space'], X_train, y_train, 5)
+        
     study = optuna.create_study(direction='minimize')
     
     study.optimize(objective, n_trials=100)
@@ -346,9 +408,6 @@ def plot_model_scores(cv_scores, val_scores, feature_numbers, items_per_row=2):
 
     n_models = len(cv_scores)
     n_rows = (n_models + items_per_row - 1) // items_per_row
-
-    import plotly.subplots as sp
-    import plotly.graph_objects as go
 
     fig = sp.make_subplots(
         rows=n_rows,
@@ -437,3 +496,138 @@ def create_stack_regressor(model_selection, final_estimator, features_by_importa
         final_estimator=final_estimator,
         cv=5
     )
+    
+def get_oof_predictions(model_selection, X, y, X_val):
+    params, _, _ = load_models_values()
+    
+    kf = KFold(n_splits=5, shuffle=True, random_state=72)
+    oof_predictions = np.zeros((X.shape[0], len(model_selection)))
+    oof_predictions_val = np.zeros((X_val.shape[0], len(model_selection)))    
+
+    for i, key in enumerate(model_selection):
+        for (train_index, holdout_index), (_, holdout_index_val) in zip(kf.split(X, y), kf.split(X_val)):
+            n = model_selection[key]
+            model = MODELS[key]['model']
+            base_params = MODELS[key]['base_params']
+            best_params = params[key][str(n)]
+            
+            instance = model(**{**base_params, **best_params})
+            instance.fit(X.iloc[train_index], y.iloc[train_index])
+            y_pred = instance.predict(X.iloc[holdout_index])
+            y_pred_val = instance.predict(X_val.iloc[holdout_index_val])
+            
+            oof_predictions[holdout_index, i] = y_pred
+            oof_predictions_val[holdout_index_val, i] = y_pred_val
+
+    return pd.DataFrame(oof_predictions), pd.DataFrame(oof_predictions_val)
+
+def make_stacking_objective_function(model_entity, search_space, model_selection, features_by_importance, X, y, cv, scoring="neg_mean_squared_error"):
+    """
+    Returns an Optuna objective function for a given final_model and parameter search space for a stacking regressor.
+    """
+    def objective(trial):
+        params = model_entity['base_params']
+
+        for pname, spec in search_space.items():
+            if spec["type"] == "int":
+                params[pname] = trial.suggest_int(
+                    pname, spec["low_limit"], spec["top_limit"], log=spec.get("log", False)
+                )
+            elif spec["type"] == "float":
+                params[pname] = trial.suggest_float(
+                    pname, spec["low_limit"], spec["top_limit"], log=spec.get("log", False)
+                )
+            elif spec["type"] == "categorical":
+                params[pname] = trial.suggest_categorical(pname, spec["choices"])
+            else:
+                raise ValueError(f"Unsupported param type {spec['type']}")
+
+        print('a1')
+        model = create_stack_regressor(model_selection, model_entity['model'](**params), features_by_importance)
+        print('a2')
+        scores = cross_val_score(model, X, y, cv=cv, scoring=scoring, n_jobs=-1)
+        print('a3')
+        return np.sqrt(-scores.mean())
+
+    return objective
+
+def plot_stacking_scores(cv_scores, val_scores, mode="mean", items_per_row=2):
+    """
+    mode = "mean"  -> plotta media/std delle fold + validation
+    mode = "folds" -> plotta singole fold + validation
+    """
+    n_models = len(cv_scores)
+    n_rows = (n_models + items_per_row - 1) // items_per_row
+
+    fig = sp.make_subplots(
+        rows=n_rows,
+        cols=items_per_row,
+        subplot_titles=list(cv_scores.keys())
+    )
+
+    for i, model_name in enumerate(cv_scores.keys()):
+        df = cv_scores[model_name]
+
+        row = i // items_per_row + 1
+        col = i % items_per_row + 1
+
+        if mode == "mean":
+            # calcola media e std delle fold
+            mean_score = df[0].mean()
+            std_score = df[0].std()
+
+            fig.add_trace(
+                go.Bar(
+                    x=["CV mean"],
+                    y=[mean_score],
+                    error_y=dict(type='data', array=[std_score]),
+                    name=f"{model_name} CV",
+                ),
+                row=row, col=col
+            )
+
+            # aggiungi validation
+            fig.add_trace(
+                go.Bar(
+                    x=["Validation"],
+                    y=[val_scores[model_name]],
+                    name=f"{model_name} Validation",
+                ),
+                row=row, col=col
+            )
+
+        elif mode == "folds":
+            # punteggi singoli fold
+            fig.add_trace(
+                go.Bar(
+                    x=[f"fold {j+1}" for j in range(len(df))],
+                    y=df[0],
+                    name=f"{model_name} CV folds",
+                ),
+                row=row, col=col
+            )
+
+            # aggiungi validation (allineato come ultima colonna)
+            fig.add_trace(
+                go.Bar(
+                    x=["Validation"],
+                    y=[val_scores[model_name]],
+                    name=f"{model_name} Validation",
+                ),
+                row=row, col=col
+            )
+
+        else:
+            raise ValueError("mode deve essere 'mean' o 'folds'")
+        
+    width = 500 if mode == 'folds' else 250
+
+    fig.update_layout(
+        barmode='group',
+        height=300 * n_rows,
+        width=width * items_per_row,
+        showlegend=True
+    )
+
+    fig.update_yaxes(range=[0.23, 0.35])
+    fig.show()
