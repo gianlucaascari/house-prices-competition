@@ -3,29 +3,38 @@ import numpy as np
 
 from sklearn.model_selection import train_test_split
 
-def load_train_set():
-    df = pd.read_csv('../data/preprocessed_z=3.csv')
+def load_train_data():
+    df_train = pd.read_csv('../data/preprocessed/dfn_train.csv')
+    df_val = pd.read_csv('../data/preprocessed/dfn_val.csv')
+    
+    X_train = df_train.iloc[:, :-1]
+    y_train = df_train.iloc[:, -1]
+    
+    X_val = df_val.iloc[:, :-1]
+    y_val = df_val.iloc[:, -1]
+    
+    X = pd.concat([X_train, X_val], axis=0)
+    y = pd.concat([y_train, y_val], axis=0)
+
+    full_df = pd.concat([X, y], axis=1)
+        
+    return X_train, X_val, y_train, y_val, full_df
+        
+def load_test_data():
+    df = pd.read_csv('../data/preprocessed/dfn.csv')
+    df_test = pd.read_csv('../data/preprocessed/dfn_test.csv')
     
     X = df.iloc[:, :-1]
     y = df.iloc[:, -1]
     
-    for col in X.select_dtypes(include='object').columns:
-        X[col] = X[col].astype('category')
+    X_test = df_test
         
-    return train_test_split(X, y, test_size=0.3, random_state=42), X, y
-        
-def load_test_data():
-    X_test = pd.read_csv('../data/preprocessed_test_z=3.csv')
-
-    for col in X_test.select_dtypes(include="object").columns:
-        X_test[col] = X_test[col].astype("category")
-        
-    return X_test
+    return X, y, X_test
 
 def prepare_submission(predictions_raw):
     import json
 
-    with open('../data/normalization_values_z=3.json', 'r') as f:
+    with open('../data/test_normalization_values.json', 'r') as f:
         norm_values = json.load(f)
 
     predictions = np.exp(predictions_raw * norm_values['std']['SalePrice'] + norm_values['mean']['SalePrice'])

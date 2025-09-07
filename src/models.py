@@ -629,5 +629,5 @@ def plot_stacking_scores(cv_scores, val_scores, mode="mean", items_per_row=2):
         showlegend=True
     )
 
-    fig.update_yaxes(range=[0.23, 0.35])
+    fig.update_yaxes(range=[0.23, 0.46])
     fig.show()
