@@ -3,6 +3,8 @@ import numpy as np
 
 from sklearn.model_selection import train_test_split
 
+from scipy.special import inv_boxcox
+
 def load_train_data():
     df_train = pd.read_csv('../data/preprocessed/dfn_train.csv')
     df_val = pd.read_csv('../data/preprocessed/dfn_val.csv')
@@ -37,7 +39,12 @@ def prepare_submission(predictions_raw):
     with open('../data/test_normalization_values.json', 'r') as f:
         norm_values = json.load(f)
 
-    predictions = np.exp(predictions_raw * norm_values['std']['SalePrice'] + norm_values['mean']['SalePrice'])
+    boxcox_predictions = predictions_raw * norm_values['std']['SalePrice'] + norm_values['mean']['SalePrice']
+
+    params = np.load("../data/boxcox_params.npz")
+    lambda_bc_loaded = params["lambda_bc"]
+
+    predictions = inv_boxcox(boxcox_predictions, lambda_bc_loaded)
     
     submission = pd.DataFrame({
         'Id': range(1461, 2920),

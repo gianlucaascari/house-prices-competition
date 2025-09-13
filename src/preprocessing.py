@@ -2,6 +2,10 @@ import math
 import json
 import numpy as np
 
+from scipy import stats
+from scipy.stats import boxcox, yeojohnson, boxcox_normmax
+from scipy.special import boxcox1p
+
 import plotly.subplots as ps
 import plotly.graph_objects as go
 
@@ -127,9 +131,11 @@ def plot_log(df, attributes, cols=1):
             go.Histogram(x=df[attr]),
             row=row, col=col,
         )
+        
+        vals, _ = yeojohnson(df[attr].values)
 
         fig.add_trace(
-            go.Histogram(x=np.log1p(df[attr])),
+            go.Histogram(x=vals),
             row=row, col=col+1    
         )
 
@@ -176,12 +182,31 @@ def engineer_features(df):
 # 4. DATA TRANSFORMATION
 # =================================================
 
-def log_features(df, attributes):
+def log_features_comp(df, attributes, mode='yeo'):
+    dfl = df.copy()
+    lmbdas = {}
+    
+    for attr in attributes:
+        if mode == 'yeo':
+            dfl[attr], lmbdas[attr] = yeojohnson(dfl[attr].values)
+        elif mode == 'box':
+            dfl[attr], lmbdas[attr] = boxcox(dfl[attr].values + 1)
+        else:
+            dfl[attr] = np.log1p(dfl[attr].values)
+            
+    return dfl, lmbdas
+
+def log_features_pre_comp(df, attributes, given_lmbdas, mode='yeo'):
     dfl = df.copy()
     
     for attr in attributes:
-        dfl[attr] = np.log1p(dfl[attr])
-        
+        if mode == 'yeo':
+            dfl[attr] = yeojohnson(dfl[attr].values, given_lmbdas[attr])
+        elif mode == 'box':
+            dfl[attr] = boxcox(dfl[attr].values + 1, given_lmbdas[attr])
+        else:
+            dfl[attr] = np.log1p(dfl[attr].values)
+            
     return dfl
 
 def transform_quality_attributes(df):
@@ -306,5 +331,51 @@ def normalize(df, prefix):
         dfn[col] = (dfn[col] - norm_values['mean'][col]) / norm_values['std'][col]
         
     return dfn
+    
+
+# 6. OUTLIERS
+# =================================================
+
+def find_outliers_all(df, z_thresh=3):
+    outliers_set = set()
+    for attr in df.columns:
+        z_score = np.abs(stats.zscore(df[attr].dropna()))
+        outliers = df[attr].dropna().index[z_score > z_thresh]
+        outliers_set.update(outliers)
+    return outliers_set
+
+def hist_matrix_with_outliers(df, z_thresh=3):
+    n_attr = len(df.columns)
+    cols = 6
+    rows = math.ceil(n_attr / cols)
+
+    fig = ps.make_subplots(rows=rows, cols=cols, subplot_titles=df.columns)
+
+    for i, attr in enumerate(df.columns):
+        # calcolo z-score
+        z_score = np.abs(stats.zscore(df[attr].dropna()))
+        mask_outliers = z_score > z_thresh
+        
+        # dati normali (blu)
+        fig.add_trace(
+            go.Histogram(x=df[attr].dropna()[~mask_outliers], marker_color='blue', opacity=0.75),
+            row=i // cols + 1,
+            col=i % cols + 1
+        )
+        # outliers (rosso)
+        fig.add_trace(
+            go.Histogram(x=df[attr].dropna()[mask_outliers], marker_color='red', opacity=0.75),
+            row=i // cols + 1,
+            col=i % cols + 1
+        )
+
+    fig.update_layout(
+        height=rows * 250,
+        width=cols * 250,
+        showlegend=False,
+        title_text='Outliers per attributo'
+    )
+
+    fig.show()
         
     

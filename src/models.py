@@ -389,15 +389,15 @@ def save_models_values(params, cv_scores, val_scores):
     with open('../checkpoints/model_optimization/val_scores.json', 'w', encoding='utf-8') as f:
         json.dump(val_scores, f)
 
-def load_models_values():
-    with open('../checkpoints/model_optimization/params.json', 'r', encoding='utf-8') as f:
+def load_models_values(folder_name='model_optimization'):
+    with open(f'../checkpoints/{folder_name}/params.json', 'r', encoding='utf-8') as f:
         params = json.load(f)
     
-    with open('../checkpoints/model_optimization/cv_scores.json', 'r', encoding='utf-8') as f:
+    with open(f'../checkpoints/{folder_name}/cv_scores.json', 'r', encoding='utf-8') as f:
         cv_scores_serializable = json.load(f)
     cv_scores = {k: pd.DataFrame(v) for k, v in cv_scores_serializable.items()}
     
-    with open('../checkpoints/model_optimization/val_scores.json', 'r', encoding='utf-8') as f:
+    with open(f'../checkpoints/{folder_name}/val_scores.json', 'r', encoding='utf-8') as f:
         val_scores = json.load(f)
     
     return params, cv_scores, val_scores
@@ -473,7 +473,7 @@ def plot_model_scores(cv_scores, val_scores, feature_numbers, items_per_row=2):
     
 def create_stack_regressor(model_selection, final_estimator, features_by_importance):
     estimators = []
-    params, _, _ = load_models_values()
+    params, _, _ = load_models_values('model_optimization_new')
 
     for key in model_selection:
         n = model_selection[key]
