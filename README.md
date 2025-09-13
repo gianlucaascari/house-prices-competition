@@ -3,6 +3,7 @@ Development of Machine Learning model for [Ames Housing Kaggle competition](http
 Final submission: 0.11744, top 2%.
 
 ## Project Structure
+```
 ├─ 🚩 checkpoints  -> scores and parameters of previous meaningful runs
 ├─ 📊 data         -> given and preprocessed data
 ├─ 📓 notebooks    
@@ -14,3 +15,4 @@ Final submission: 0.11744, top 2%.
    ├─ features.py       -> feature importance and feature selection
    ├─ models.py         -> model optimization and evaluation
    └─ predict.py        -> make predictions
+```
